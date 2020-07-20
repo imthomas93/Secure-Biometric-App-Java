@@ -10,11 +10,17 @@ import androidx.fragment.app.FragmentActivity;
 import androidx.annotation.NonNull;
 
 import java.nio.charset.Charset;
+import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
+import java.util.Arrays;
 import java.util.concurrent.Executor;
 
+import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
+import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.SecretKey;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.IvParameterSpec;
 
 
 public class SecureBiometricManager {
@@ -25,6 +31,8 @@ public class SecureBiometricManager {
     private BiometricManager biometricManager;
     private BiometricListener listener;
     private CryptographyManager cryptoManager;
+    byte[] iv;
+
 
     SecureBiometricManager(Context context, BiometricListener listener){
         this.context = context;
@@ -38,18 +46,26 @@ public class SecureBiometricManager {
      *  It will first setup the biometric authentication dialog and
      * gets  an instance of SecretKey and then initializes the Cipher
      * with the key. The secret key uses [DECRYPT_MODE][Cipher.DECRYPT_MODE].
+     * @param isLockFlag
      */
-    void showBiometricDialog() {
+    void showBiometricDialog(boolean isLockFlag) {
         // Initialize everything needed for authentication
         setupBiometricPrompt();
 
         Cipher cipher = cryptoManager.getCipher();
         SecretKey secretKey = cryptoManager.getSecretKey();
         try {
-            cipher.init(Cipher.ENCRYPT_MODE, secretKey);
+            // Encrypt String
+            if(!isLockFlag){
+                cipher.init(Cipher.ENCRYPT_MODE, secretKey);
+            }
+            // Decrypt String
+            else{
+                cipher.init(Cipher.DECRYPT_MODE, secretKey, new IvParameterSpec(iv));
+            }
             // Prompt appears when user clicks authentication button.
             biometricPrompt.authenticate(promptInfo, new BiometricPrompt.CryptoObject(cipher));
-        } catch (InvalidKeyException e) {
+        } catch (InvalidKeyException | InvalidAlgorithmParameterException e) {
             e.printStackTrace();
         }
     }
@@ -89,33 +105,37 @@ public class SecureBiometricManager {
      */
     private void setupBiometricPrompt(){
         executor = ContextCompat.getMainExecutor(context);
-        biometricPrompt = new BiometricPrompt((FragmentActivity) context, executor, new BiometricPrompt.AuthenticationCallback() {
+        biometricPrompt = new BiometricPrompt((FragmentActivity) context,
+                executor,
+                new BiometricPrompt.AuthenticationCallback() {
 
-            @Override
-            public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
-                super.onAuthenticationError(errorCode, errString);
-                Toast.makeText(context,
-                        "Authentication error: " + errString, Toast.LENGTH_SHORT)
-                        .show();
-                listener.onFailed();
-            }
+                    @Override
+                    public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
+                        super.onAuthenticationError(errorCode, errString);
+                        Toast.makeText(context,
+                                "Authentication error: " + errString, Toast.LENGTH_SHORT)
+                                .show();
+                        listener.onFailed();
+                    }
 
-            @Override
-            public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result){
-                super.onAuthenticationSucceeded(result);
-                listener.onSuccess(result);
-            }
+                    @Override
+                    public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result){
+                        super.onAuthenticationSucceeded(result);
+                        listener.onSuccess(result);
+                        // For decryption later on, we need to keep hold of the cipher's initialization vector
+                        iv = result.getCryptoObject().getCipher().getIV();
+                    }
 
-            @Override
-            public void onAuthenticationFailed(){
-                super.onAuthenticationFailed();
-                Toast.makeText(context, "Authentication failed",
-                        Toast.LENGTH_SHORT)
-                        .show();
-                listener.onFailed();
+                    @Override
+                    public void onAuthenticationFailed(){
+                        super.onAuthenticationFailed();
+                        Toast.makeText(context, "Authentication failed",
+                                Toast.LENGTH_SHORT)
+                                .show();
+                        listener.onFailed();
 
-            }
-        });
+                    }
+                });
 
         // Create prompt dialog
         promptInfo = new BiometricPrompt.PromptInfo.Builder()

@@ -3,7 +3,6 @@ package sg.gov.tech.securebiometric;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.biometric.BiometricPrompt;
 
-import android.annotation.SuppressLint;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
@@ -13,7 +12,6 @@ import android.widget.Toast;
 
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
@@ -28,7 +26,6 @@ public class MainActivity extends AppCompatActivity {
     Button secureInput_button;
     SecureBiometricManager secureBiometricManager;
 
-    @SuppressLint("WrongViewCast")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);

@@ -1,25 +1,32 @@
 package sg.gov.tech.securebiometric;
 
 import android.content.Context;
+import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyProperties;
 import android.util.Log;
 import android.widget.Toast;
+
+import androidx.annotation.NonNull;
 import androidx.biometric.BiometricManager;
 import androidx.biometric.BiometricPrompt;
 import androidx.core.content.ContextCompat;
 import androidx.fragment.app.FragmentActivity;
-import androidx.annotation.NonNull;
 
-import java.nio.charset.Charset;
+import java.io.IOException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
-import java.util.Arrays;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
+import java.security.UnrecoverableKeyException;
+import java.security.cert.CertificateException;
 import java.util.concurrent.Executor;
 
-import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
-import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.KeyGenerator;
+import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
-import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.IvParameterSpec;
 
 
@@ -30,16 +37,32 @@ public class SecureBiometricManager {
     private BiometricPrompt.PromptInfo promptInfo;
     private BiometricManager biometricManager;
     private BiometricListener listener;
-    private CryptographyManager cryptoManager;
     byte[] iv;
+    /* This should not be hardcoded on app layer*/
+    private String KEY_NAME = String.valueOf(R.string.secret_key_name);
+    int VALIDITY_DURATION = -1;
 
 
     SecureBiometricManager(Context context, BiometricListener listener){
         this.context = context;
         this.listener = listener;
-        this.cryptoManager = new CryptographyManager();
-
-}
+        generateSecretKey(new KeyGenParameterSpec.Builder(
+                KEY_NAME,
+                KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_CBC)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_PKCS7)
+                .setUserAuthenticationRequired(true)
+                // Invalidate the keys if the user has registered a new biometric
+                // credential, such as a new fingerprint. Can call this method only
+                // on Android 7.0 (API level 24) or higher. The variable
+                // "invalidatedByBiometricEnrollment" is true by default.
+                .setInvalidatedByBiometricEnrollment(true)
+                // The other important property is setUserAuthenticationValidityDurationSeconds().
+                // If it is set to -1 then the key can only be unlocked using Fingerprint or Biometrics.
+                // If it is set to any other value, the key can be unlocked using a device screenlock too.
+                .setUserAuthenticationValidityDurationSeconds(VALIDITY_DURATION)
+                .build());
+    }
 
     /**
      * This method is called when the onClick is called.
@@ -52,8 +75,8 @@ public class SecureBiometricManager {
         // Initialize everything needed for authentication
         setupBiometricPrompt();
 
-        Cipher cipher = cryptoManager.getCipher();
-        SecretKey secretKey = cryptoManager.getSecretKey();
+        Cipher cipher = getCipher();
+        SecretKey secretKey = getSecretKey();
         try {
             // Encrypt String
             if(!isLockFlag){
@@ -142,9 +165,61 @@ public class SecureBiometricManager {
                 .setTitle("Biometric login for sample app")
                 .setSubtitle("Log in using your biometric")
                 .setNegativeButtonText("Use account password")
-                // Allows device pin
-                //.setDeviceCredentialAllowed(true)
                 .build();
+    }
 
+    /**
+     * This method generates an instance of SecretKey
+     */
+    private void generateSecretKey(KeyGenParameterSpec keyGenParameterSpec) {
+        try {
+            KeyGenerator keyGenerator = KeyGenerator.getInstance(
+                    KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
+            keyGenerator.init(keyGenParameterSpec);
+            keyGenerator.generateKey();
+        } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
+        } catch (NoSuchProviderException e) {
+            e.printStackTrace();
+        } catch (InvalidAlgorithmParameterException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * This method gets an instance of SecretKey
+     */
+    private SecretKey getSecretKey() {
+        try {
+            KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
+            // Before the keystore can be accessed, it must be loaded.
+            keyStore.load(null);
+            return ((SecretKey)keyStore.getKey(KEY_NAME, null));
+        } catch (KeyStoreException e) {
+            e.printStackTrace();
+        } catch (CertificateException ex) {
+            ex.printStackTrace();
+        } catch (NoSuchAlgorithmException ex) {
+            ex.printStackTrace();
+        } catch (IOException | UnrecoverableKeyException ex) {
+            ex.printStackTrace();
+        }
+        return null;
+    }
+
+    /**
+     * This method gets a cipher instance
+     */
+    private Cipher getCipher() {
+        try {
+            return Cipher.getInstance(KeyProperties.KEY_ALGORITHM_AES + "/"
+                    + KeyProperties.BLOCK_MODE_CBC + "/"
+                    + KeyProperties.ENCRYPTION_PADDING_PKCS7);
+        } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
+        } catch (NoSuchPaddingException e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 }
